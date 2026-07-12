@@ -1,0 +1,28 @@
+{
+  "name": "Brainrot Lab",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "scripts/Shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "Server": {
+        "$path": "scripts/Server"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "scripts/Client"
+      }
+    },
+
+    "StarterGui": {
+      "$path": "scripts/UI"
+    }
+  }
+}
