@@ -17,6 +17,15 @@ local function onPlayerAdded(player)
     rebirths.Name = "Rebirths"
     rebirths.Value = data.Rebirths
     rebirths.Parent = leaderstats
+
+    -- Fragments is the cosmetic currency from Glitch Fragments / weekly
+    -- chests. Exposed on the leaderboard so players can see it without
+    -- a UI screen, and so the Glitch reward change is testable in
+    -- isolation before the rest of the client exists.
+    local fragments = Instance.new("IntValue")
+    fragments.Name = "Fragments"
+    fragments.Value = data.Fragments
+    fragments.Parent = leaderstats
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
