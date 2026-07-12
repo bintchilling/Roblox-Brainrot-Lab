@@ -1,0 +1,14 @@
+# Rojo build artifacts
+sourcemap.json
+build.rbxl
+build.rbxlx
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS noise
+.DS_Store
+Thumbs.db
