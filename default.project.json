@@ -6,6 +6,25 @@
     "ReplicatedStorage": {
       "Shared": {
         "$path": "scripts/Shared"
+      },
+      "Remotes": {
+        "$className": "Folder",
+        "BuyUnit": { "$className": "RemoteEvent" },
+        "FuseUnits": { "$className": "RemoteEvent" },
+        "ClaimDaily": { "$className": "RemoteEvent" },
+        "Rebirth": { "$className": "RemoteEvent" },
+        "GlitchTriggered": { "$className": "RemoteEvent" },
+        "GlitchClicked": { "$className": "RemoteEvent" },
+        "RequestTrade": { "$className": "RemoteEvent" },
+        "RespondTrade": { "$className": "RemoteEvent" },
+        "UpdateTradeOffer": { "$className": "RemoteEvent" },
+        "ConfirmTrade": { "$className": "RemoteEvent" },
+        "CancelTrade": { "$className": "RemoteEvent" },
+        "TradeStateChanged": { "$className": "RemoteEvent" },
+        "InventoryUpdated": { "$className": "RemoteEvent" },
+        "PlaceUnit": { "$className": "RemoteEvent" },
+        "UnplaceUnit": { "$className": "RemoteEvent" },
+        "GetInventory": { "$className": "RemoteFunction" }
       }
     },
 
