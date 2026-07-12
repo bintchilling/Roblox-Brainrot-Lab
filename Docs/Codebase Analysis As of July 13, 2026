@@ -1,0 +1,174 @@
+  Brainrot Lab — Codebase Analysis
+
+  1. Current Architecture
+
+  Style: classic Roblox server-authoritative singleton, organized by game domain.
+
+  - State is centralized in one module (DataManager) — every domain script mutates the same in-memory table keyed by
+  UserId. There's no ORM, no events, no per-player objects. Mutations are bare table writes: data.RotPoints += 100.
+  - Servers are split by feature, not by player: each game system (Economy, Fusion, Trade, Glitch, Rebirth, Rewards,
+  Inventory, Monetization) is a separate Script in its own folder under scripts/Server/. All of them are independently
+  listening on Roblox services or RemoteEvents.
+  - Networking is event-based, declared up-front in default.project.json (every RemoteEvent and the one RemoteFunction).  Handlers validate input types, look up state, mutate, and FireClient back. There is no replication for non-Remote
+  state — the client only learns things when a handler explicitly pushes them.
+  - The two "non-Roblox" modules are DataManager (state I/O) and TradeManager (pure state machine, no service
+  dependencies) — everything else is a thin Roblox-event shim around one of them.
+  - Asset/data config is shared via UnitDatabase under ReplicatedStorage.Shared — both server and (eventual) client will  require the same table. This is the only piece of data designed to be cross-tier.
+  - Toolchain is Rojo 7.7.0 (via Rokit). Filesystem is the source of truth; default.project.json maps folders into the
+  DataModel. No tests, no linter, no CI.
+
+  The shape is conventional and works for a small Roblox project — flat handler files, one shared data module, one pure
+  logic module. It's straightforward to follow once you know the convention.
+
+  ---
+  2. Existing Systems
+
+  ┌──────────────┬────────────────────────────────────────────┬─────────────────────────────────────────────────────┐
+  │    System    │                    File                    │                      Mechanism                      │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │              │                                            │ DataStore (pcall-wrapped so unpublished Studio      │
+  │ Persistence  │ Data/DataManager.lua + Autosave.server.lua │ doesn't crash) + in-memory cache + 120s tick +      │
+  │              │                                            │ PlayerRemoving/BindToClose flush                    │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Player setup │ Data/PlayerSetup.server.lua                │ Builds leaderstats from loaded data; re-runs the    │
+  │              │                                            │ loop for already-joined players                     │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Economy      │                                            │ Heartbeat accumulator, ticks once/sec, sums         │
+  │ (passive     │ Economy/EconomyLoop.server.lua             │ BaseIncome of placed units, respects DoubleIncome   │
+  │ income)      │                                            │ gamepass                                            │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Economy      │ Economy/BuyUnitHandler.server.lua          │ BuyUnit remote; 1.15^owned cost curve;              │
+  │ (buying)     │                                            │ InventoryUpdated push                               │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Fusion       │ Fusion/FusionHandler.server.lua            │ FuseUnits remote; spends 3 of one rarity, grants    │
+  │              │                                            │ random of next (Legendary is cap)                   │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │              │                                            │ ClaimDaily remote; 24h cooldown, streak (resets but │
+  │ Daily reward │ Rewards/DailyRewardHandler.server.lua      │  never punishes), weekly chest every 7 claims (not  │
+  │              │                                            │ 7 days — important)                                 │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Rebirth      │ Rebirth/RebirthHandler.server.lua          │ Flat 100k RotPoints → wipe units/placements, +1     │
+  │              │                                            │ rebirth, zero out currency                          │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │              │                                            │ Per-player task.spawn loop, random 3-6 min          │
+  │ Glitch       │ Glitch/GlitchEventHandler.server.lua       │ interval, 8s click window, 50-150 RP bonus. Note:   │
+  │ Fragments    │                                            │ reward is RotPoints, not Fragments — naming/feature │
+  │              │                                            │  mismatch                                           │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ Gamepasses   │ Monetization/GamepassHandler.server.lua    │ PlayerAdded + 1s wait + UserOwnsGamePassAsync       │
+  │              │                                            │ cache. Placeholder IDs = 0 (always false)           │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │              │                                            │ Request → accept → 6-event state machine; 3s        │
+  │ Trading      │ Trading/TradeManager.lua (module) +        │ confirm lock-in; ownership re-validated right       │
+  │              │ TradeHandler.server.lua (shim)             │ before swap; "any offer change resets both          │
+  │              │                                            │ confirmations" anti-scam rule                       │
+  ├──────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │              │                                            │ PlaceUnit/UnplaceUnit/GetInventory; 6 base slots +  │
+  │ Inventory    │ Inventory/InventoryHandler.server.lua      │ 4 from ExtraSlots gamepass; placement only valid if │
+  │              │                                            │  you have a free copy                               │
+  └──────────────┴────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+
+  scripts/Client and scripts/UI exist as empty folders bound to StarterPlayerScripts and StarterGui in
+  default.project.json — no client code yet.
+
+  ---
+  3. Potential Problems
+
+  Bugs / correctness risks
+
+  - Data race in GlitchEventHandler.startGlitchLoop: the loop does local data = DataManager.Get(player) per iteration,
+  but the data.PlacedUnits it samples can shrink between sample and the click handler's read. If the player unplaces
+  units during the 8s window, the index may point at a now-removed entry. The handler doesn't check PlacedUnits[index]
+  before awarding the bonus, but the bonus is just RotPoints (not a unit grant), so the current logic is OK — but the
+  moment Fragments/units get added as glitch rewards, this becomes a use-after-free.
+  - Rebirth is destructive and irreversible: wipes OwnedUnits and PlacedUnits client-side with no confirmation flow, no
+  ClaimDaily-style grace, and no pre-rebirth snapshot. A misclick or a malicious client re-firing the event costs the
+  player everything. Server doesn't gate rate, doesn't require a confirm Remote, and doesn't even verify the player's
+  leaderstats agree with the data wipe.
+  - Rebirth does not preserve Fragments or Gamepasses semantics correctly: Gamepasses and Fragments survive (good), but
+  DailyStreak and LastDailyClaim also survive — the player keeps their streak through a rebirth, which is presumably
+  fine but is a design decision worth confirming. More importantly, the leaderboard value for Rot Points is updated but
+  the PlacedUnits/OwnedUnits push to the client is missing — RebirthEvent:FireClient(player, data.Rebirths) fires but no  InventoryUpdated. The client (when it exists) will show stale unit counts.
+  - DailyRewardHandler streak is fragile to clock drift: uses os.time() server-side. Roblox's os.time() is fine in
+  practice, but the streak only increments if elapsed < 2 days — meaning a player who claims at 23:59:59 on day 1 and
+  00:00:01 on day 3 loses 1 day of streak, while a player claiming 12 hours late on day 2 keeps it. Not a bug per se,
+  but the comment says "no punishment" while there is a soft one.
+  - DailyRewardHandler weekly counter ignores order: WeeklyClaims += 1 runs unconditionally on every successful claim,
+  so the comment "every 7 daily claims (not necessarily consecutive days)" is correct — but there's no protection if a
+  player already got the chest and tries to claim again before 7 more. They can't, because elapsed < SECONDS_IN_DAY
+  returns early — but the order of operations is fragile: a future refactor that changes the cooldown would silently
+  change weekly behavior.
+  - InventoryHandler.UnplaceUnit only removes the first matching entry (break after first match). If a unit name is
+  duplicated in PlacedUnits, only one is removed. That's likely the intent (unplace one copy), but the Remote takes a
+  unitName not an index — so the client has no way to target a specific placed instance. When the UI distinguishes
+  between placed units by position, this will be a problem.
+  - TradeHandler.ConfirmTrade lock-in delay re-validates the wrong table after a PlayerRemoving race: if a player leaves  during the 3s task.delay, trade still references them, and the for unitName, count in
+  pairs(trade.offers[playerA.UserId]) loop will index into stale state. The EndTrade cleanup in PlayerRemoving runs
+  synchronously on the main thread, but task.delay callbacks run on a separate resume and may see the trade already
+  removed — TradeManager.BothConfirmed(trade) will return false (confirmations cleared) and the early return is hit, but  the other player gets no notification that the trade was cancelled. There's no TradeStateChanged "Aborted" push in
+  PlayerRemoving cleanup.
+  3. Potential Problems
+
+  Bugs / correctness risks
+
+  - Data race in GlitchEventHandler.startGlitchLoop: the loop does local data = DataManager.Get(player) per iteration, but the data.PlacedUnits it samples can shrink between sample and the click handler's read. If the player unplaces units during the 8s window, the index
+  may point at a now-removed entry. The handler doesn't check PlacedUnits[index] before awarding the bonus, but the bonus is just RotPoints (not a unit grant), so the current logic is OK — but the moment Fragments/units get added as glitch rewards, this becomes a
+  use-after-free.
+  - Rebirth is destructive and irreversible: wipes OwnedUnits and PlacedUnits client-side with no confirmation flow, no ClaimDaily-style grace, and no pre-rebirth snapshot. A misclick or a malicious client re-firing the event costs the player everything. Server doesn't
+  gate rate, doesn't require a confirm Remote, and doesn't even verify the player's leaderstats agree with the data wipe.
+  - Rebirth does not preserve Fragments or Gamepasses semantics correctly: Gamepasses and Fragments survive (good), but DailyStreak and LastDailyClaim also survive — the player keeps their streak through a rebirth, which is presumably fine but is a design decision worth
+  confirming. More importantly, the leaderboard value for Rot Points is updated but the PlacedUnits/OwnedUnits push to the client is missing — RebirthEvent:FireClient(player, data.Rebirths) fires but no InventoryUpdated. The client (when it exists) will show stale unit
+  counts.
+  - DailyRewardHandler streak is fragile to clock drift: uses os.time() server-side. Roblox's os.time() is fine in practice, but the streak only increments if elapsed < 2 days — meaning a player who claims at 23:59:59 on day 1 and 00:00:01 on day 3 loses 1 day of streak,
+  while a player claiming 12 hours late on day 2 keeps it. Not a bug per se, but the comment says "no punishment" while there is a soft one.
+  - DailyRewardHandler weekly counter ignores order: WeeklyClaims += 1 runs unconditionally on every successful claim, so the comment "every 7 daily claims (not necessarily consecutive days)" is correct — but there's no protection if a player already got the chest and
+  tries to claim again before 7 more. They can't, because elapsed < SECONDS_IN_DAY returns early — but the order of operations is fragile: a future refactor that changes the cooldown would silently change weekly behavior.
+  - InventoryHandler.UnplaceUnit only removes the first matching entry (break after first match). If a unit name is duplicated in PlacedUnits, only one is removed. That's likely the intent (unplace one copy), but the Remote takes a unitName not an index — so the client
+  has no way to target a specific placed instance. When the UI distinguishes between placed units by position, this will be a problem.
+  - TradeHandler.ConfirmTrade lock-in delay re-validates the wrong table after a PlayerRemoving race: if a player leaves during the 3s task.delay, trade still references them, and the for unitName, count in pairs(trade.offers[playerA.UserId]) loop will index into stale
+  state. The EndTrade cleanup in PlayerRemoving runs synchronously on the main thread, but task.delay callbacks run on a separate resume and may see the trade already removed — TradeManager.BothConfirmed(trade) will return false (confirmations cleared) and the early
+  return is hit, but the other player gets no notification that the trade was cancelled. There's no TradeStateChanged "Aborted" push in PlayerRemoving cleanup.
+  - GamepassHandler initial check races with DataManager.Load: task.wait(1) is a wall-clock sleep. Under server load, Load may take >1s, and Get will return nil, silently skipping the entire check — player gets the gamepass they paid for but the server thinks they don't.
+  Should be PlayerAdded sequencing (a callback or a shared promise), not a sleep.
+  - No GlitchTriggered on already-claimed glitches: the click handler clears activeGlitches[player], but a client could spam GlitchClicked 100x in the 8s window. Only the first matches activeGlitches[player] == index and awards; the rest fail silently. Fine, but worth
+  being aware of as a DoS surface (cheap to fix with a firing flag).
+  - DataManager.Get returns nil for unknown players silently. Every handler checks if not data then return end, but the DataManager.Load call in PlayerSetup is the only place that loads. If PlayerSetup fails to run (e.g. someone replaces it), every other handler sees nil
+  and silently does nothing. The player's inventory will appear to never update. No alarm is raised.
+  - InventoryHandler.maxSlots reads Gamepasses["ExtraSlots"] directly: but the gamepass is populated by GamepassHandler 1s after PlayerAdded. If the player buys the gamepass before that check runs, they're charged but the data isn't updated until next PlayerAdded. (A
+  PromptGamePassPurchaseFinished re-check exists but only fires on purchase during a session.)
+
+  Architectural / scaling concerns
+
+  - No client yet, but the server has already committed to a "push" model: every mutation FireClients a fresh InventoryUpdated. When the client arrives, this means every change re-sends the full owned + placed tables. With ~20 units and max 10 placed, that's fine. With
+  more, it becomes wasteful. No deltas, no replication, no change-tracking.
+  - Mutations are unsynchronized: Rebirth wipes OwnedUnits mid-EconomyLoop iteration over PlacedUnits. The PlacedUnits loop sees the just-emptied table, incomeThisTick = 0, no crash. But if a future system holds a reference into PlacedUnits and the rebirth happens, it
+  gets a hole. PlacedUnits is an array; table.remove produces nil holes that ipairs skips but for i, v in pairs() would not. Not exploited today, but a footgun.
+  - No transaction/batching layer: a player's save is a single DataStore call with the full table. Autosave every 2 minutes is a pcall(SetAsync) with no UpdateAsync retry-on-conflict, so two players in the same studio playing on the same account (or future cloud-shared
+  profiles) could clobber. Realistic only at scale, but the fix is small (use UpdateAsync).
+  - DataStore is single-keyed and uncached on read: every Load is a GetAsync with no fallback session locking. If the player's SetAsync from a previous session hadn't finished when the new session's GetAsync ran, you'd silently load the old data. The 120s autosave +
+  BindToClose flush is the mitigation; the proper mitigation is ProfileService (called out in CONTRIBUTING.md known gaps).
+  - Concurrency model is bare task.spawn/task.delay: GlitchEventHandler uses a per-player while player.Parent do loop. If you have hundreds of players, you have hundreds of concurrent infinite loops doing nothing most of the time (each sleeping 3-6 min). Cheap on Roblox,
+  but it's a design that doesn't scale to a heartbeat-driven scheduler (which would be one Heartbeat listener iterating all eligible players).
+  - No centralized "remotes registry": every handler does ReplicatedStorage.Remotes.<Name>. Adding a new remote means editing both default.project.json and every script that uses it. If two scripts grab the same RemoteEvent and listen to it independently, you've got the
+  "duplicate execution" bug CONTRIBUTING.md warns about. There's no compile-time check, no init script that creates remotes at runtime as a safety net.
+  - TradeManager is in-memory only, not in Shared: that's correct for security (client must never see the offers table) but also means no audit log, no persistence of in-flight trades across server restarts. If the server crashes mid-trade, players lose their placed
+  items on the offer. Currently not catastrophic because no items move until final confirmation, but worth noting.
+  - No rate limiting anywhere: BuyUnit, FuseUnits, Rebirth, GlitchClicked are all client-triggerable with no cooldown. A misbehaving client can spam any of them; worst case is log noise, not exploits (because all are server-validated and idempotent-ish), but it's a DoS
+  surface.
+  - Fragments currency has no sink: data.Fragments is granted (weekly chest) but never spent — no handler reads it. Either the cosmetic store isn't built yet (in which case Fragments is dead currency), or this is pre-plumbing for a future system. No tests/checks catch
+  the leak.
+  - GamepassHandler.ownsGamepass early-returns false for id == 0: this is the placeholder safety, but the function name implies "does the player own this gamepass?" and the answer is hard-coded false for all current passes. Every test that calls this expecting real
+  behavior will fail silently.
+
+  Design/UX concerns worth flagging
+
+  - The Glitch Fragments mechanic, as currently coded, awards RotPoints, not Fragments. The data model has a Fragments field, the README/contributing call it "Glitch Fragments," but the handler writes to RotPoints. Either the reward is misnamed or the mechanic is
+  half-built.
+  - The Glitch reward is unrelated to the unit it spawned from — clicking a placed Legendary gives the same 50-150 RP as clicking a Common. With no Fragments, no unit-grant, and no rarity scaling, the "Glitch" is just a random ping-pong minigame.
+  - No placement validation against a position grid: PlaceUnit only appends to the list with no coordinates. When the UI is built, there's no spatial information to draw. A re-design pass will be needed.
+  - Rebirth at 100k RotPoints is reachable in roughly 5-10 minutes with a few placed Legendaries (300/sec × 6 slots = 1800/sec → 100k in ~55s). The "reset" feels less meaningful than intended.
+  - UnplaceUnit accepts any unitName and removes the first match, so the client has no way to pick which placed copy to remove. When multiple of the same unit are placed, the UI cannot target a specific slot.
+
+  ---
+  Summary: the architecture is conventional, readable, and defensible for a prototype. The two highest-priority concerns are (1) the race conditions around DataManager/gamepass load timing and trade completion, and (2) the Glitch mechanic being misaligned with its own
+  data model — these are real bugs the moment a client ships. Everything else is design debt that can wait until post-launch.
