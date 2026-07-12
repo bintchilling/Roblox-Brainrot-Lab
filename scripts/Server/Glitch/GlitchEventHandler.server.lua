@@ -44,15 +44,22 @@ GlitchClicked.OnServerEvent:Connect(function(player, index)
     if activeGlitches[player] == index then
         local data = DataManager.Get(player)
         if data then
-            local bonus = math.random(50, 150)
-            data.RotPoints += bonus
+            -- Fragments is the cosmetic currency, so the reward scale is
+            -- much smaller than RotPoints. Math.random(1, 3) per click is
+            -- intentionally low — Fragments has no sink yet (known gap),
+            -- so a higher reward would let it accumulate without purpose.
+            local fragmentsGained = math.random(1, 3)
+            data.Fragments += fragmentsGained
 
             local leaderstats = player:FindFirstChild("leaderstats")
             if leaderstats then
-                leaderstats["Rot Points"].Value = data.RotPoints
+                local fragValue = leaderstats:FindFirstChild("Fragments")
+                if fragValue then
+                    fragValue.Value = data.Fragments
+                end
             end
 
-            GlitchClicked:FireClient(player, true, bonus)
+            GlitchClicked:FireClient(player, true, fragmentsGained)
         end
         activeGlitches[player] = nil
     end
