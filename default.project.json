@@ -3,6 +3,10 @@
   "tree": {
     "$className": "DataModel",
 
+    "Workspace": {
+      "$path": "scripts/Scene"
+    },
+
     "ReplicatedStorage": {
       "Shared": {
         "$path": "scripts/Shared"
