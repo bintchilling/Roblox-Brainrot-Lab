@@ -17,6 +17,7 @@
         "FuseUnits": { "$className": "RemoteEvent" },
         "ClaimDaily": { "$className": "RemoteEvent" },
         "Rebirth": { "$className": "RemoteEvent" },
+        "ConfirmRebirth": { "$className": "RemoteEvent" },
         "GlitchTriggered": { "$className": "RemoteEvent" },
         "GlitchClicked": { "$className": "RemoteEvent" },
         "RequestTrade": { "$className": "RemoteEvent" },
@@ -40,7 +41,24 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "$path": "scripts/Client"
+        "ClientBootstrap": {
+          "$path": "scripts/Client/ClientBootstrap",
+          "$properties": {
+            "RunContext": "Client"
+          }
+        },
+        "Theme": {
+          "$path": "scripts/Client/Theme.lua"
+        },
+        "StateManager": {
+          "$path": "scripts/Client/StateManager.lua"
+        },
+        "Components": {
+          "$path": "scripts/Client/Components"
+        },
+        "Controllers": {
+          "$path": "scripts/Client/Controllers"
+        }
       }
     },
 

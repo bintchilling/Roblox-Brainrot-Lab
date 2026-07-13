@@ -31,10 +31,17 @@ RunService.Heartbeat:Connect(function(dt)
             incomeThisTick *= 2
         end
 
+        local leaderstats = player:FindFirstChild("leaderstats")
+        if leaderstats then
+            local ir = leaderstats:FindFirstChild("IncomeRate")
+            if ir then
+                ir.Value = incomeThisTick
+            end
+        end
+
         if incomeThisTick > 0 then
             data.RotPoints += incomeThisTick
 
-            local leaderstats = player:FindFirstChild("leaderstats")
             if leaderstats then
                 local rp = leaderstats:FindFirstChild("Rot Points")
                 if rp then

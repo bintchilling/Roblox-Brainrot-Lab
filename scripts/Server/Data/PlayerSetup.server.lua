@@ -26,6 +26,11 @@ local function onPlayerAdded(player)
     fragments.Name = "Fragments"
     fragments.Value = data.Fragments
     fragments.Parent = leaderstats
+
+    local incomeRate = Instance.new("NumberValue")
+    incomeRate.Name = "IncomeRate"
+    incomeRate.Value = 0
+    incomeRate.Parent = leaderstats
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)

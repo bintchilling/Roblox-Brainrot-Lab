@@ -1,6 +1,12 @@
 local UnitDatabase = {}
 
+UnitDatabase.Order = {
+    "Test Brainrot", "Boombo Zizzle", "Chungo Wumpo", "Blorbo Snax",
+    "Frigo Camelo", "Skrunkle Bap",
+}
+
 UnitDatabase.Units = {
+    ["Test Brainrot"] = { Rarity = "Common",    BaseIncome = 1,   BaseCost = 0 },
     ["Boombo Zizzle"] = { Rarity = "Common",    BaseIncome = 1,   BaseCost = 50 },
     ["Chungo Wumpo"]  = { Rarity = "Uncommon",  BaseIncome = 5,   BaseCost = 250 },
     ["Blorbo Snax"]   = { Rarity = "Rare",      BaseIncome = 20,  BaseCost = 1000 },

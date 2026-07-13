@@ -103,40 +103,91 @@ GetInventory.OnServerInvoke = function(player)
 end
 
 PlaceUnitEvent.OnServerEvent:Connect(function(player, unitName)
-    if type(unitName) ~= "string" then return end
+    print("[InventoryHandler] PlaceUnit request:", player.Name, "→", tostring(unitName))
+
+    if type(unitName) ~= "string" then
+        warn("[InventoryHandler] Invalid unitName type:", typeof(unitName))
+        return
+    end
 
     local data = DataManager.Get(player)
-    if not data then return end
+    if not data then
+        warn("[InventoryHandler] No data for", player.Name)
+        return
+    end
 
-    if not UnitDatabase.Units[unitName] then return end -- unknown unit, ignore
+    if not UnitDatabase.Units[unitName] then
+        warn("[InventoryHandler] Unknown unit:", unitName)
+        return
+    end
 
     if #data.PlacedUnits >= maxSlots(data) then
-        return -- lab is full
+        warn("[InventoryHandler] Lab full for", player.Name)
+        return
     end
 
     local owned = data.OwnedUnits[unitName] or 0
     local placed = countPlaced(data, unitName)
+    print("[InventoryHandler] Owned:", owned, "Already placed:", placed, "Max slots:", maxSlots(data))
+
     if placed >= owned then
-        return -- every copy you own is already placed, nothing free to place
+        warn("[InventoryHandler] No free copies of", unitName, "to place")
+        return
     end
 
     table.insert(data.PlacedUnits, { UnitName = unitName })
-    -- slot index is 1-based, computed AFTER the insert so the last slot in
-    -- the grid maps to the most recently placed unit.
     placeUnitPart(unitName, #data.PlacedUnits)
+
+    print("[InventoryHandler] Placed", unitName, "→ slot", #data.PlacedUnits)
+
+    -- Update IncomeRate leaderstat
+    local ir = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("IncomeRate")
+    if ir then
+        local rate = 0
+        for _, p in ipairs(data.PlacedUnits) do
+            local u = UnitDatabase.Units[p.UnitName]
+            if u then rate += u.BaseIncome end
+        end
+        if data.Gamepasses["DoubleIncome"] then rate *= 2 end
+        ir.Value = rate
+    end
+
     InventoryUpdated:FireClient(player, data.OwnedUnits, data.PlacedUnits)
 end)
 
 UnplaceUnitEvent.OnServerEvent:Connect(function(player, unitName)
-    if type(unitName) ~= "string" then return end
+    print("[InventoryHandler] UnplaceUnit request:", player.Name, "→", tostring(unitName))
+
+    if type(unitName) ~= "string" then
+        warn("[InventoryHandler] Invalid unitName type:", typeof(unitName))
+        return
+    end
 
     local data = DataManager.Get(player)
-    if not data then return end
+    if not data then
+        warn("[InventoryHandler] No data for", player.Name)
+        return
+    end
 
     for i, placed in ipairs(data.PlacedUnits) do
         if placed.UnitName == unitName then
             table.remove(data.PlacedUnits, i)
             removeFirstUnitPart(unitName)
+
+            print("[InventoryHandler] Unplaced", unitName, "→ remaining placed:", #data.PlacedUnits)
+
+            -- Update IncomeRate leaderstat
+            local ir = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("IncomeRate")
+            if ir then
+                local rate = 0
+                for _, p in ipairs(data.PlacedUnits) do
+                    local u = UnitDatabase.Units[p.UnitName]
+                    if u then rate += u.BaseIncome end
+                end
+                if data.Gamepasses["DoubleIncome"] then rate *= 2 end
+                ir.Value = rate
+            end
+
             InventoryUpdated:FireClient(player, data.OwnedUnits, data.PlacedUnits)
             break
         end
